@@ -14,6 +14,7 @@ import {
   DoubleSide,
   Group,
   Mesh,
+  MeshPhysicalMaterial,
   MeshStandardMaterial,
   Object3D,
   SphereGeometry,
@@ -122,7 +123,14 @@ export interface CupParts {
 export function buildCup(): CupParts {
   const root = new Group();
   root.name = 'Latte Cup';
-  const ceramic = mat(0xfafaf9, { roughness: 0.3, side: DoubleSide });
+  // Glazed porcelain: glossy clearcoat over warm white.
+  const ceramic = new MeshPhysicalMaterial({
+    color: 0xfbfaf6,
+    roughness: 0.18,
+    clearcoat: 1,
+    clearcoatRoughness: 0.08,
+    side: DoubleSide,
+  });
   const wall = new Mesh(new CylinderGeometry(0.045, 0.034, CUP_HEIGHT, 28, 1, true), ceramic);
   wall.position.y = CUP_HEIGHT / 2;
   const base = new Mesh(new CircleGeometry(0.034, 28), ceramic);
@@ -165,7 +173,9 @@ export function buildCup(): CupParts {
   art.add(big, l, r);
   art.visible = false;
 
-  root.add(wall, base, handle, liquid, art, grabVolume);
+  const saucer = new Mesh(new CylinderGeometry(0.068, 0.05, 0.008, 36), ceramic);
+  saucer.position.y = -0.004;
+  root.add(wall, base, handle, liquid, art, grabVolume, saucer);
   return { root, liquid, liquidMaterial, art };
 }
 

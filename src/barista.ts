@@ -40,7 +40,7 @@ import {
   MachineParts,
   PitcherParts,
 } from './barista-props.js';
-import { describe, findDrinkMeshes, fitModel, hideProcedural, loadManifest, loadModel } from './premium-models.js';
+import { describe, fitModel, hideProcedural, loadManifest, loadModel, removeJunk } from './premium-models.js';
 import { fetchKit, KitResult, rememberKit, showCredits, showShopOverlay } from './shop-client.js';
 
 /** Per-model yaw corrections (radians) if a model faces away from the user. */
@@ -146,7 +146,8 @@ export class BaristaSystem extends createSystem({
   private milkFull = 0.085;
   private counterModel: Group | null = null;
   private counterModelHeight = 1;
-  private drinkMeshes: Mesh[] = [];
+  private servedCup: Object3D | null = null;
+  private plainCupParts: Object3D[] = [];
   private credits: string[] = [];
 
   // scratch (no allocation in update)
@@ -299,58 +300,32 @@ export class BaristaSystem extends createSystem({
       this.machine.root.add(fit.root);
       const front = d / 2;
       // Anchors for a two-group commercial machine (drip tray grate ~30% up).
-      this.machine.trayLocal = [-0.22 * w, 0.3 * h, front - 0.12 * d];
-      this.machine.groupHeadLocal = [-0.22 * w, 0.55 * h, front - 0.17 * d];
-      this.machine.wandTipLocal = [0.5 * w + 0.03, 0.32 * h, front - 0.08 * d];
+      this.machine.trayLocal = [-0.27 * w, 0.33 * h, front - 0.25 * d];
+      this.machine.groupHeadLocal = [-0.27 * w, 0.55 * h, front - 0.3 * d];
+      this.machine.wandTipLocal = [0.47 * w, 0.4 * h, front - 0.1 * d];
       this.machine.root.updateMatrixWorld(true);
-      this.machinePoint([-0.22 * w, 0.8 * h, front + 0.015], this.v1);
+      this.machinePoint([-0.27 * w, 0.8 * h, front + 0.01], this.v1);
       this.machine.brewButton.position.copy(this.v1);
       this.setHome(this.machine.brewButton, lift);
     }
 
     if (cup) {
+      // This model is a finished latte (cup, saucer, foam art in one mesh), so the
+      // lesson uses the plain cup to fill and this one is revealed when served.
       console.info('[barista] cup', describe(cup));
-      const fit = fitModel(cup, { axis: 'max', size: 0.15 });
-      hideProcedural(this.cup.root, [this.cup.liquid, this.cup.art]);
+      removeJunk(cup);
+      const fit = fitModel(cup, { axis: 'max', size: 0.14 });
+      fit.root.visible = false;
       this.cup.root.add(fit.root);
-      this.drinkMeshes = findDrinkMeshes(cup);
-      for (const m of this.drinkMeshes) m.visible = false;
-      // Cup body: a mesh named like a cup, else estimate from the saucer footprint.
-      fit.root.updateMatrixWorld(true);
-      let body: Mesh | null = null;
-      cup.traverse((o) => {
-        const mesh = o as Mesh;
-        if (!body && mesh.isMesh && /cup|mug/i.test(mesh.name) && !/saucer|plate|spoon/i.test(mesh.name)) body = mesh;
-      });
-      const box = new Box3();
-      if (body) {
-        box.setFromObject(body);
-        // Into cup-root space (the root is upright and unscaled at load time).
-        this.cup.root.updateMatrixWorld(true);
-        this.cup.root.worldToLocal(box.min);
-        this.cup.root.worldToLocal(box.max);
-      } else {
-        const bw = fit.size.x * 0.55;
-        box.min.set(-bw / 2, fit.size.y * 0.12, -bw / 2);
-        box.max.set(bw / 2, fit.size.y, bw / 2);
-      }
-      const bodyW = Math.min(box.max.x - box.min.x, box.max.z - box.min.z);
-      const radius = bodyW * 0.42;
-      const bottom = box.min.y + (box.max.y - box.min.y) * 0.14;
-      this.cupRim = box.max.y;
-      this.liquidBase = bottom;
-      this.liquidDepth = Math.max(0.02, box.max.y - 0.006 - bottom);
-      const cx = (box.min.x + box.max.x) / 2;
-      const cz = (box.min.z + box.max.z) / 2;
-      this.cup.liquid.position.set(cx, bottom, cz);
-      this.cup.liquid.scale.x = this.cup.liquid.scale.z = radius / 0.0425;
-      this.cup.art.position.x = cx;
-      this.cup.art.position.z = cz;
-      this.cup.art.scale.setScalar(Math.min(1.2, radius / 0.04));
+      this.servedCup = fit.root;
+      this.plainCupParts = this.cup.root.children.filter(
+        (c) => c !== fit.root && c !== this.cup.liquid && c !== this.cup.art,
+      );
     }
 
     if (pitcher) {
       console.info('[barista] pitcher', describe(pitcher));
+      removeJunk(pitcher);
       const fit = fitModel(pitcher, { axis: 'y', size: 0.12 });
       hideProcedural(this.pitcher.root, [this.pitcher.milk, this.pitcher.spout]);
       this.pitcher.root.add(fit.root);
@@ -553,11 +528,16 @@ export class BaristaSystem extends createSystem({
       /* storage unavailable */
     }
     this.elapsedText = best === seconds ? `Served in ${seconds}s. New best!` : `Served in ${seconds}s. Best: ${best}s`;
-    if (this.drinkMeshes.length > 0) {
-      // Reveal the model's own finished latte (foam + art) in place of ours.
-      for (const m of this.drinkMeshes) m.visible = true;
+    if (this.servedCup) {
+      // Reveal the premium finished latte in place of the practice cup.
+      this.servedCup.visible = true;
       this.cup.liquid.visible = false;
       this.cup.art.visible = false;
+      for (const part of this.plainCupParts) {
+        const mesh = part as Mesh;
+        const mat = mesh.isMesh ? (Array.isArray(mesh.material) ? mesh.material[0] : mesh.material) : null;
+        if (!(mat && mat.transparent && mat.opacity === 0)) part.visible = false;
+      }
     }
     this.setStep(Step.Done);
     if (this.shopPanel) this.shopPanel.visible = true;
@@ -580,8 +560,10 @@ export class BaristaSystem extends createSystem({
     this.pitcherMilk = 1;
     this.brewing = false;
     this.pitcher.milk.scale.y = this.milkRest;
-    for (const m of this.drinkMeshes) m.visible = false;
-    this.cup.liquid.visible = true;
+    if (this.servedCup) {
+      this.servedCup.visible = false;
+      for (const part of this.plainCupParts) part.visible = true;
+    }
     this.cup.art.visible = false;
     this.showEspressoStream(false);
     this.showMilkStream(false);
@@ -715,7 +697,7 @@ export class BaristaSystem extends createSystem({
   // ------------------------------------------------------------------ visuals
   private updateCupLiquid(): void {
     const liquid = this.cup.liquid;
-    liquid.visible = this.fill > 0.001 && !(this.step === Step.Done && this.drinkMeshes.length > 0);
+    liquid.visible = this.fill > 0.001 && !(this.step === Step.Done && this.servedCup != null);
     liquid.scale.y = Math.max(0.0001, this.fill * this.liquidDepth);
     this.cup.liquidMaterial.color.copy(ESPRESSO_COLOR).lerp(LATTE_COLOR, this.milkRatio);
     this.cup.art.position.y = liquid.position.y + liquid.scale.y + 0.001;

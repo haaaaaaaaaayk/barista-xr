@@ -119,3 +119,16 @@ export function hideProcedural(root: Object3D, keep: Object3D[]): void {
     child.visible = false;
   }
 }
+
+/** Removes render-scene leftovers (backdrop planes, ground) that ship inside some models. */
+export function removeJunk(model: Object3D): void {
+  const pattern = /bg_plane|background|backdrop|ground|floor|shadow_?plane|studio/i;
+  const doomed: Object3D[] = [];
+  model.traverse((o) => {
+    const mesh = o as Mesh;
+    if (!mesh.isMesh) return;
+    const mat = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
+    if (pattern.test(mesh.name) || pattern.test(mat?.name ?? '')) doomed.push(mesh);
+  });
+  for (const o of doomed) o.removeFromParent();
+}
