@@ -15,7 +15,30 @@
  */
 
 import { iwsdkDev } from '@iwsdk/vite-plugin-dev';
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
+
+// Serves the Vercel Function at /api/shop during `npm run dev` so the kit panel
+// works locally and in the v0 sandbox, not only after deploy.
+function shopApiDevPlugin(): Plugin {
+  return {
+    name: 'barista-shop-api-dev',
+    configureServer(server) {
+      server.middlewares.use('/api/shop', async (req, res) => {
+        try {
+          const mod = await server.ssrLoadModule('/api/shop.ts');
+          const url = new URL(req.originalUrl ?? req.url ?? '/', 'http://localhost');
+          const response: Response = await mod.GET(new Request(url));
+          res.statusCode = response.status;
+          response.headers.forEach((value, key) => res.setHeader(key, value));
+          res.end(await response.text());
+        } catch (err) {
+          res.statusCode = 500;
+          res.end(JSON.stringify({ error: String(err) }));
+        }
+      });
+    },
+  };
+}
 
 // v0 and Vercel Sandbox terminate TLS at their proxy, so the server running
 // inside the sandbox must speak plain HTTP. IWSDK otherwise enables a cached
@@ -32,7 +55,7 @@ process.env.IWSDK_DEV_OPEN ??= 'false';
 const port = Number.parseInt(process.env.PORT ?? '', 10) || 5173;
 
 export default defineConfig({
-  plugins: [iwsdkDev({ https: devHttps })],
+  plugins: [shopApiDevPlugin(), iwsdkDev({ https: devHttps })],
   server: {
     host: '0.0.0.0',
     port,

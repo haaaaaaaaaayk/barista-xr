@@ -1,21 +1,5 @@
-<!--
-  Copyright (c) Meta Platforms, Inc. and affiliates.
-
-  Licensed under the Apache License, Version 2.0 (the "License");
-  you may not use this file except in compliance with the License.
-  You may obtain a copy of the License at
-
-      http://www.apache.org/licenses/LICENSE-2.0
-
-  Unless required by applicable law or agreed to in writing, software
-  distributed under the License is distributed on an "AS IS" BASIS,
-  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-  See the License for the specific language governing permissions and
-  limitations under the License.
--->
-
 <!doctype html>
-<html>
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta
@@ -23,10 +7,50 @@
       content="width=device-width, initial-scale=1, shrink-to-fit=no"
     />
     <link rel="icon" href="data:," />
-    <title>IWSDK v0 Template</title>
+    <title>Barista XR</title>
+    <style>
+      body { margin: 0; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; }
+      #shop-overlay {
+        position: fixed; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center;
+        background: rgba(20, 14, 10, 0.55); padding: 16px; box-sizing: border-box;
+      }
+      #shop-overlay[hidden] { display: none; }
+      .shop-card {
+        background: #fffaf3; color: #2b2118; border-radius: 18px; width: min(520px, 100%);
+        max-height: 90vh; overflow: auto; padding: 24px; box-sizing: border-box;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+      }
+      .shop-eyebrow { font-size: 12px; font-weight: 700; letter-spacing: 0.08em; color: #b45309; margin: 0; }
+      .shop-card h2 { margin: 6px 0 4px; font-size: 26px; }
+      .shop-sub { margin: 0 0 16px; color: #6b5b4d; font-size: 14px; }
+      #shop-list { display: flex; flex-direction: column; gap: 10px; }
+      .shop-item {
+        display: flex; flex-direction: column; gap: 2px; padding: 14px 16px; border-radius: 12px;
+        background: #fff; border: 1px solid #ecdcc8; text-decoration: none; color: inherit;
+      }
+      .shop-item:hover { border-color: #b45309; }
+      .shop-role { font-size: 12px; font-weight: 700; color: #b45309; text-transform: uppercase; letter-spacing: 0.05em; }
+      .shop-title { font-size: 16px; font-weight: 600; }
+      .shop-meta { font-size: 13px; color: #6b5b4d; }
+      #shop-warnings p { background: #fef3c7; color: #78350f; padding: 8px 12px; border-radius: 8px; font-size: 13px; }
+      #shop-close {
+        margin-top: 16px; width: 100%; padding: 12px; border-radius: 12px; border: 0;
+        background: #2b2118; color: #fff; font-size: 15px; font-weight: 600; cursor: pointer;
+      }
+    </style>
   </head>
-  <body style="margin: 0">
+  <body>
     <div id="scene-container"></div>
+    <div id="shop-overlay" hidden>
+      <div class="shop-card" role="dialog" aria-labelledby="shop-heading">
+        <p class="shop-eyebrow">Make it at home</p>
+        <h2 id="shop-heading">Your latte kit</h2>
+        <p class="shop-sub">Live products from Shop. Tap one to see it at the merchant.</p>
+        <div id="shop-warnings"></div>
+        <div id="shop-list"></div>
+        <button id="shop-close" type="button">Back to the bar</button>
+      </div>
+    </div>
     <script type="module" src="/src/index.ts"></script>
   </body>
 </html>

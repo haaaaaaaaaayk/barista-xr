@@ -41,6 +41,12 @@ export class PanelSystem extends createSystem({}) {
         const is2D = visibilityState === VisibilityState.NonImmersive;
         xrButton.setProperties({ display: is2D ? 'flex' : 'none' });
         exitButton.setProperties({ display: is2D ? 'none' : 'flex' });
+        // In mixed reality the step panel takes over; keep the bar uncluttered.
+        if (panel) panel.visible = is2D;
+        if (!is2D) {
+          const overlay = document.getElementById('shop-overlay');
+          if (overlay) overlay.hidden = true;
+        }
       }),
     );
   }
