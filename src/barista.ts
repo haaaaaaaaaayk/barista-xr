@@ -989,6 +989,18 @@ export class BaristaSystem extends createSystem({
   }
 }
 
+/** The 3D panel font lacks some glyphs: drop accents and odd separators. */
+function panelSafe(text: string): string {
+  return text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[|•·–—]/g, '-')
+    .replace(/[^\x20-\x7E$]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function truncate(text: string, max: number): string {
+  text = panelSafe(text);
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
