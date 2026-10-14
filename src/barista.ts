@@ -152,6 +152,7 @@ export class BaristaSystem extends createSystem({
   private liquidBase = CUP_LIQUID_BASE;
   private liquidDepth = CUP_LIQUID_DEPTH;
   private servePlaced = false;
+  private brewArmed = false;
   private confetti!: Group;
   private confettiVel!: Float32Array;
   private confettiSpin!: Float32Array;
@@ -554,6 +555,7 @@ export class BaristaSystem extends createSystem({
           }
         } else {
           this.showMilkStream(false);
+          if (this.pitcherEntity.hasComponent(Grabbed)) this.setProgress(this.pourHint());
         }
         break;
 
@@ -579,6 +581,7 @@ export class BaristaSystem extends createSystem({
     this.step = step;
     const copy = STEP_COPY[step];
     this.servePlaced = false;
+    this.brewArmed = false;
     this.setText(this.stepEls.label, step === Step.Done ? 'TA-DA!  STEP 5 OF 5 COMPLETE' : `STEP ${step} OF 5`);
     this.setText(this.stepEls.title, copy.title);
     this.setText(this.stepEls.body, copy.body);
@@ -659,14 +662,16 @@ export class BaristaSystem extends createSystem({
     if (this.brewing) return;
     this.machine.brewButton.getWorldPosition(this.v1);
     const grips = this.player.gripSpaces;
+    let nearest = Infinity;
     for (const space of [grips.left, grips.right]) {
       if (space == null) continue;
       space.getWorldPosition(this.v2);
-      if (this.v2.distanceTo(this.v1) < 0.08) {
-        this.tryBrew();
-        return;
-      }
+      nearest = Math.min(nearest, this.v2.distanceTo(this.v1));
     }
+    // Hands start right next to the circle after placing the cup, so a touch
+    // only counts once the hand has moved away first (no accidental starts).
+    if (nearest > 0.16) this.brewArmed = true;
+    if (this.brewArmed && nearest < 0.08) this.tryBrew();
   }
 
   // ------------------------------------------------------------------ zones
@@ -703,11 +708,22 @@ export class BaristaSystem extends createSystem({
   private pitcherPouring(): boolean {
     this.pitcher.root.getWorldQuaternion(this.q);
     this.up.set(0, 1, 0).applyQuaternion(this.q);
-    if (this.up.y > 0.6) return false; // not tilted enough (~53°)
+    if (this.up.y > 0.76) return false; // not tilted enough (~40°)
     this.pitcher.spout.getWorldPosition(this.v1);
     this.cup.root.getWorldPosition(this.v2);
     const rimY = this.v2.y + this.cupRim;
     return this.horizontalDistance(this.v1, this.v2) < 0.11 && this.v1.y > rimY - 0.03 && this.v1.y < rimY + 0.3;
+  }
+
+  /** Live coaching while the user lines up the pour. */
+  private pourHint(): string {
+    this.pitcher.spout.getWorldPosition(this.v1);
+    this.cup.root.getWorldPosition(this.v2);
+    if (this.horizontalDistance(this.v1, this.v2) > 0.11) return 'Move the jug right over your cup';
+    this.pitcher.root.getWorldQuaternion(this.q);
+    this.up.set(0, 1, 0).applyQuaternion(this.q);
+    if (this.up.y > 0.76) return 'Now tip it more!';
+    return 'Bring the jug a little higher above the cup';
   }
 
   // ------------------------------------------------------------------ release / snapping
