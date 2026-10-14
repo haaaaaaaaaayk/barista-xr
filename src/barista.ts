@@ -209,6 +209,9 @@ export class BaristaSystem extends createSystem({
 
     this.setStep(Step.PlaceCup);
     this.prefetchKit();
+    if (typeof location !== 'undefined' && location.search.includes('debug')) {
+      (window as unknown as { __barista: unknown }).__barista = this;
+    }
     void this.upgradeWithModels().catch((err) => console.warn('[barista] model upgrade failed', err));
   }
 
@@ -816,6 +819,35 @@ export class BaristaSystem extends createSystem({
       );
       puff.scale.setScalar(0.6 + phase * 1.6);
     }
+  }
+
+  // ------------------------------------------------------------------ debug driver (?debug)
+  /** Moves props the way a user would, for desktop testing without a headset. */
+  debugAct(action: 'place' | 'brew' | 'steam' | 'pour' | 'serve' | 'restart'): string {
+    const cup = this.cup.root;
+    const pitcher = this.pitcher.root;
+    if (action === 'place') {
+      this.machinePoint(this.machine.trayLocal, this.v1);
+      cup.position.set(this.v1.x + 0.02, this.v1.y + 0.03, this.v1.z);
+      this.onRelease(this.cupEntity);
+    } else if (action === 'brew') {
+      this.tryBrew();
+    } else if (action === 'steam') {
+      this.machinePoint(this.machine.wandTipLocal, this.v1);
+      pitcher.position.set(this.v1.x, this.v1.y - 0.06, this.v1.z);
+      pitcher.quaternion.identity();
+    } else if (action === 'pour') {
+      cup.getWorldPosition(this.v1);
+      pitcher.position.set(this.v1.x - 0.09, this.v1.y + this.cupRim + 0.05, this.v1.z);
+      pitcher.rotation.set(0, 0, -1.25);
+    } else if (action === 'serve') {
+      this.coaster.getWorldPosition(this.v1);
+      cup.position.set(this.v1.x + 0.02, this.v1.y + 0.02, this.v1.z);
+      this.onRelease(this.cupEntity);
+    } else if (action === 'restart') {
+      this.restart();
+    }
+    return `step=${this.step} fill=${this.fill.toFixed(2)} steam=${this.steam.toFixed(2)} brewing=${this.brewing}`;
   }
 
   // ------------------------------------------------------------------ celebration
