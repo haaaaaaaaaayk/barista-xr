@@ -88,12 +88,20 @@ export function buildMachine(): MachineParts {
   wandKnob.position.set(0.12, 0.29, 0.06);
 
   // Big friendly brew button on the brow.
+  // "Touch here" target: a soft amber disc with a glowing ring, facing the user.
   const brewButton = new Mesh(
-    new CylinderGeometry(0.022, 0.022, 0.018, 24),
-    mat(0xdc2626, { emissive: new Color(0x7f1d1d), emissiveIntensity: 0.6 }),
+    new CircleGeometry(0.032, 32),
+    new MeshStandardMaterial({
+      color: 0xf59e0b, emissive: new Color(0xf59e0b), emissiveIntensity: 0.6,
+      transparent: true, opacity: 0.28, depthWrite: false, side: DoubleSide,
+    }),
   );
-  brewButton.rotation.x = Math.PI / 2;
-  brewButton.position.set(0.075, 0.3, 0.135);
+  const brewRing = new Mesh(
+    new TorusGeometry(0.034, 0.0035, 10, 48),
+    new MeshStandardMaterial({ color: 0xfbbf24, emissive: new Color(0xf59e0b), emissiveIntensity: 1.4 }),
+  );
+  brewButton.add(brewRing);
+  brewButton.position.set(-0.04, 0.24, 0.16);
   brewButton.name = 'Brew Button';
 
   // A few cups stacked on top for flavour.
@@ -322,4 +330,16 @@ export function buildMarker(): Mesh {
   ring.rotation.x = -Math.PI / 2;
   ring.visible = false;
   return ring;
+}
+
+// ---------------------------------------------------------------- pointer arrow
+/** A bouncing arrow that points down at whatever the user should touch next. */
+export function buildPointer(): Mesh {
+  const arrow = new Mesh(
+    new ConeGeometry(0.018, 0.045, 20),
+    new MeshStandardMaterial({ color: 0xfbbf24, emissive: new Color(0xf59e0b), emissiveIntensity: 1.1 }),
+  );
+  arrow.rotation.x = Math.PI; // tip down
+  arrow.visible = false;
+  return arrow;
 }

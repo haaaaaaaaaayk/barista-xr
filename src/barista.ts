@@ -33,6 +33,7 @@ import {
   buildCounter,
   buildCup,
   buildMarker,
+  buildPointer,
   buildMachine,
   buildPitcher,
   buildSteamPuffs,
@@ -64,28 +65,28 @@ enum Step {
 
 const STEP_COPY: Record<Step, { title: string; body: string; hint: string }> = {
   [Step.PlaceCup]: {
-    title: 'Place the cup',
-    body: 'Grab the white cup and set it on the drip tray under the espresso machine.',
-    hint: 'Hands: pinch to grab. Controllers: hold the grip button.',
+    title: 'Put your cup under the machine',
+    body: 'Grab the green cup at the front of the counter. Set it on the metal grill under the LEFT side of the coffee machine, inside the glowing yellow ring.',
+    hint: 'Hands: pinch to grab. Controllers: squeeze the side grip button. Follow the yellow arrow.',
   },
   [Step.Brew]: {
-    title: 'Pull the shot',
-    body: 'Press the red BREW button on the machine. Touch it, or point and pinch / pull the trigger.',
-    hint: 'A good shot takes about 25 seconds. Ours is a little faster.',
+    title: 'Start the coffee',
+    body: 'Touch the glowing orange circle on the front of the machine, just above your cup (top left). Coffee will start pouring into the cup.',
+    hint: 'Reach out and tap it with your finger or controller, or point at it and pinch.',
   },
   [Step.Steam]: {
-    title: 'Steam the milk',
-    body: 'Pick up the steel pitcher and hold it under the steam wand on the right side of the machine.',
-    hint: 'Keep the wand tip just inside the pitcher until the milk is silky.',
+    title: 'Heat the milk',
+    body: 'Pick up the small gold metal jug (back right of the counter). Hold it under the thin metal pipe sticking out of the RIGHT side of the machine, at the glowing ring.',
+    hint: 'Baristas call that pipe the "steam wand". Keep the jug there until it reaches 100%.',
   },
   [Step.Pour]: {
-    title: 'Pour the latte',
-    body: 'Hold the pitcher over the cup and tilt it to pour the steamed milk in.',
-    hint: 'Start high and slow, then bring the spout close to finish.',
+    title: 'Pour the milk in',
+    body: 'Bring the jug over your cup and tip it forward, like pouring a glass of water.',
+    hint: 'Tip it a lot. The milk flows once the jug is well tilted over the cup.',
   },
   [Step.Serve]: {
     title: 'Serve it',
-    body: 'Lift your latte and set it down on the glowing green coaster.',
+    body: 'Pick up your latte and set it down on the glowing green circle at the front right of the counter.',
     hint: 'Careful, it is full!',
   },
   [Step.Done]: {
@@ -121,6 +122,7 @@ export class BaristaSystem extends createSystem({
   private pitcherEntity!: Entity;
   private movable: { obj: Object3D; home: Vector3 }[] = [];
   private trayMarker!: Mesh;
+  private pointer!: Mesh;
   private wandMarker!: Mesh;
 
   // panels
@@ -271,6 +273,8 @@ export class BaristaSystem extends createSystem({
     // Guide rings: show where the cup goes and where to hold the pitcher.
     this.trayMarker = buildMarker();
     this.world.createTransformEntity(this.trayMarker);
+    this.pointer = buildPointer();
+    this.world.createTransformEntity(this.pointer);
     this.wandMarker = buildMarker();
     this.wandMarker.scale.setScalar(0.8);
     this.world.createTransformEntity(this.wandMarker);
@@ -334,7 +338,8 @@ export class BaristaSystem extends createSystem({
       this.machine.trayLocal = [gx, trayY, gz];
       this.machine.groupHeadLocal = [gx, headY, gz];
       this.machine.wandTipLocal = [0.47 * w, 0.4 * h, front - 0.1 * d];
-      this.machinePoint([gx, 0.8 * h, front + 0.01], this.v1);
+      // Touch target sits right in front of the spout, just above the cup.
+      this.machinePoint([gx, headY + 0.035, gz + 0.09], this.v1);
       this.machine.brewButton.position.copy(this.v1);
       this.setHome(this.machine.brewButton, lift);
     }
@@ -405,6 +410,35 @@ export class BaristaSystem extends createSystem({
       this.machinePoint(this.machine.wandTipLocal, this.v1);
       this.wandMarker.position.copy(this.v1);
     }
+    // The brew target only exists while it's the thing to touch.
+    const brewTarget = this.machine.brewButton;
+    brewTarget.visible = this.step === Step.Brew && !this.brewing;
+    if (brewTarget.visible) brewTarget.scale.setScalar(1 + Math.sin(time * 5) * 0.1);
+
+    // Bouncing arrow over the next thing to touch.
+    let target: Vector3 | null = null;
+    if (this.step === Step.PlaceCup) {
+      target = this.cupEntity.hasComponent(Grabbed)
+        ? this.machinePoint(this.machine.trayLocal, this.v1)
+        : this.cup.root.getWorldPosition(this.v1).setY(this.v1.y + this.cupRim);
+    } else if (this.step === Step.Brew && !this.brewing) {
+      target = brewTarget.getWorldPosition(this.v1).setY(this.v1.y + 0.03);
+    } else if (this.step === Step.Steam && !this.pitcherAtWand()) {
+      target = this.pitcherEntity.hasComponent(Grabbed)
+        ? this.machinePoint(this.machine.wandTipLocal, this.v1)
+        : this.pitcher.root.getWorldPosition(this.v1).setY(this.v1.y + 0.13);
+    } else if (this.step === Step.Pour && !this.pitcherPouring()) {
+      target = this.cup.root.getWorldPosition(this.v1).setY(this.v1.y + this.cupRim);
+    } else if (this.step === Step.Serve) {
+      target = this.cupEntity.hasComponent(Grabbed)
+        ? this.coaster.getWorldPosition(this.v1)
+        : this.cup.root.getWorldPosition(this.v1).setY(this.v1.y + this.cupRim);
+    }
+    this.pointer.visible = target != null;
+    if (target) {
+      this.pointer.position.set(target.x, target.y + 0.07 + Math.abs(Math.sin(time * 3.2)) * 0.035, target.z);
+    }
+
     const pulse = 1 + Math.sin(time * 4) * 0.08;
     this.trayMarker.scale.setScalar(pulse);
     this.wandMarker.scale.setScalar(0.8 * pulse);
@@ -625,7 +659,7 @@ export class BaristaSystem extends createSystem({
     for (const space of [grips.left, grips.right]) {
       if (space == null) continue;
       space.getWorldPosition(this.v2);
-      if (this.v2.distanceTo(this.v1) < 0.06) {
+      if (this.v2.distanceTo(this.v1) < 0.08) {
         this.tryBrew();
         return;
       }
