@@ -37,15 +37,6 @@ const MODELS = [
     link: 'https://sketchfab.com/3d-models/commercial-coffee-machine-bab05bc7805d4b0dbc2cdcbb48441956',
   },
   {
-    id: 'cup',
-    source: 'sketchfab',
-    uid: 'c5090fbf444c4cd0b9d9dd441f75be3e',
-    title: 'Upscale coffee',
-    author: 'kirigirinon',
-    license: 'CC BY 4.0',
-    link: 'https://sketchfab.com/3d-models/upscale-coffee-c5090fbf444c4cd0b9d9dd441f75be3e',
-  },
-  {
     id: 'pitcher',
     source: 'sketchfab',
     uid: 'ced53d1872b04e2b979c302eeef0fa09',

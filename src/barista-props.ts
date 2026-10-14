@@ -6,6 +6,7 @@
  * Origins sit at the base of each prop so "on the counter" is simply y = counterTop.
  */
 import {
+  BackSide,
   BoxGeometry,
   CircleGeometry,
   Color,
@@ -13,12 +14,14 @@ import {
   CylinderGeometry,
   DoubleSide,
   Group,
+  LatheGeometry,
   Mesh,
   MeshPhysicalMaterial,
   MeshStandardMaterial,
   Object3D,
   SphereGeometry,
   TorusGeometry,
+  Vector2,
 } from '@iwsdk/core';
 
 export const ESPRESSO_COLOR = new Color(0x3b2314);
@@ -111,7 +114,35 @@ export function buildMachine(): MachineParts {
 }
 
 // ---------------------------------------------------------------- cup
+/** Tulip cappuccino cup on a saucer: sage glaze outside, cream inside, gold rims. */
+const CUP_LIFT = 0.002; // cup foot sits in the saucer well
 export const CUP_HEIGHT = 0.072;
+export const CUP_RIM = CUP_LIFT + CUP_HEIGHT;
+export const CUP_LIQUID_BASE = CUP_LIFT + 0.009;
+export const CUP_LIQUID_DEPTH = CUP_RIM - 0.006 - CUP_LIQUID_BASE;
+
+const CUP_OUTER: [number, number][] = [
+  [0.021, 0], [0.025, 0.002], [0.028, 0.006], [0.034, 0.014], [0.041, 0.026],
+  [0.046, 0.042], [0.048, 0.058], [0.049, 0.068], [0.0495, CUP_HEIGHT],
+];
+const CUP_INNER: [number, number][] = [
+  [0, 0.008], [0.02, 0.009], [0.031, 0.016], [0.038, 0.027],
+  [0.043, 0.042], [0.0452, 0.058], [0.0465, CUP_HEIGHT],
+];
+
+/** Inner wall radius at a height measured from the cup root (for the liquid surface). */
+export function cupInnerRadiusAt(rootY: number): number {
+  const y = rootY - CUP_LIFT;
+  for (let i = 1; i < CUP_INNER.length; i++) {
+    const [r0, y0] = CUP_INNER[i - 1];
+    const [r1, y1] = CUP_INNER[i];
+    if (y <= y1) {
+      const t = Math.max(0, (y - y0) / (y1 - y0));
+      return r0 + (r1 - r0) * t;
+    }
+  }
+  return CUP_INNER[CUP_INNER.length - 1][0];
+}
 
 export interface CupParts {
   root: Group;
@@ -123,59 +154,75 @@ export interface CupParts {
 export function buildCup(): CupParts {
   const root = new Group();
   root.name = 'Latte Cup';
-  // Glazed porcelain: glossy clearcoat over warm white.
-  const ceramic = new MeshPhysicalMaterial({
-    color: 0xfbfaf6,
-    roughness: 0.18,
-    clearcoat: 1,
-    clearcoatRoughness: 0.08,
-    side: DoubleSide,
+  const glaze = new MeshPhysicalMaterial({
+    color: 0x86a596, roughness: 0.32, clearcoat: 1, clearcoatRoughness: 0.12,
   });
-  const wall = new Mesh(new CylinderGeometry(0.045, 0.034, CUP_HEIGHT, 28, 1, true), ceramic);
-  wall.position.y = CUP_HEIGHT / 2;
-  const base = new Mesh(new CircleGeometry(0.034, 28), ceramic);
-  base.rotation.x = -Math.PI / 2;
-  base.position.y = 0.002;
-  const handle = new Mesh(new TorusGeometry(0.022, 0.006, 8, 20, Math.PI * 1.2), ceramic);
-  handle.position.set(0.05, CUP_HEIGHT * 0.55, 0);
-  handle.rotation.z = -Math.PI * 0.6;
+  const creamGlaze = new MeshPhysicalMaterial({
+    color: 0xf7f0e4, roughness: 0.2, clearcoat: 1, clearcoatRoughness: 0.06, side: BackSide,
+  });
+  const creamUp = new MeshPhysicalMaterial({ color: 0xf7f0e4, roughness: 0.2, clearcoat: 1 });
+  const gold = new MeshStandardMaterial({ color: 0xd2a94e, metalness: 1, roughness: 0.25 });
+
+  const body = new Group();
+  body.position.y = CUP_LIFT;
+  const outer = new Mesh(new LatheGeometry(CUP_OUTER.map(([r, y]) => new Vector2(r, y)), 48), glaze);
+  const inner = new Mesh(new LatheGeometry(CUP_INNER.map(([r, y]) => new Vector2(r, y)), 48), creamGlaze);
+  const foot = new Mesh(new CircleGeometry(0.021, 32), glaze);
+  foot.rotation.x = Math.PI / 2;
+  const rim = new Mesh(new TorusGeometry(0.048, 0.0017, 8, 64), gold);
+  rim.rotation.x = Math.PI / 2;
+  rim.position.y = CUP_HEIGHT;
+  const handle = new Mesh(new TorusGeometry(0.016, 0.0045, 10, 24, Math.PI * 1.25), glaze);
+  handle.position.set(0.05, 0.041, 0);
+  handle.rotation.z = -Math.PI * 0.62;
+  body.add(outer, inner, foot, rim, handle);
+
+  // Saucer with a cream well and a gold edge.
+  const saucer = new Mesh(
+    new LatheGeometry(
+      [[0.0, 0.0], [0.047, 0.0], [0.06, 0.004], [0.068, 0.008], [0.071, 0.011]].map(([r, y]) => new Vector2(r, y)),
+      56,
+    ),
+    new MeshPhysicalMaterial({ color: 0x86a596, roughness: 0.32, clearcoat: 1, side: DoubleSide }),
+  );
+  const well = new Mesh(new CircleGeometry(0.034, 40), creamUp);
+  well.rotation.x = -Math.PI / 2;
+  well.position.y = 0.0012;
+  const saucerRim = new Mesh(new TorusGeometry(0.071, 0.0012, 6, 64), gold);
+  saucerRim.rotation.x = Math.PI / 2;
+  saucerRim.position.y = 0.011;
+
   // Invisible grab volume so it is easy to pick up with a pinch.
   const grabVolume = new Mesh(
-    new CylinderGeometry(0.06, 0.06, CUP_HEIGHT + 0.02, 12),
+    new CylinderGeometry(0.065, 0.065, CUP_RIM + 0.02, 12),
     new MeshStandardMaterial({ transparent: true, opacity: 0, depthWrite: false }),
   );
-  grabVolume.position.y = CUP_HEIGHT / 2;
+  grabVolume.position.y = CUP_RIM / 2;
 
-  // Liquid: unit-height cylinder anchored at its base, scaled in y by fill level.
-  const liquidGeometry = new CylinderGeometry(0.0425, 0.034, 1, 28);
+  // Liquid: unit cylinder anchored at its base; height = fill, width follows the bowl.
+  const liquidGeometry = new CylinderGeometry(1, 1, 1, 40);
   liquidGeometry.translate(0, 0.5, 0);
-  const liquidMaterial = mat(ESPRESSO_COLOR.getHex(), { roughness: 0.2 });
+  const liquidMaterial = mat(ESPRESSO_COLOR.getHex(), { roughness: 0.15 });
   const liquid = new Mesh(liquidGeometry, liquidMaterial);
-  liquid.position.y = 0.003;
-  liquid.scale.y = 0.0001;
+  liquid.position.y = CUP_LIQUID_BASE;
+  liquid.scale.set(0.03, 0.0001, 0.03);
   liquid.visible = false;
 
-  // Latte art: a simple heart-ish rosetta of cream circles on the surface.
+  // Latte art: a rosetta-style heart of cream on the surface (sized for r = 0.04).
   const art = new Group();
   const cream = mat(0xfff8ec, { roughness: 0.5 });
-  const big = new Mesh(new CircleGeometry(0.022, 24), cream);
+  const big = new Mesh(new CircleGeometry(0.022, 32), cream);
   big.rotation.x = -Math.PI / 2;
   big.position.z = 0.004;
-  const l = new Mesh(new CircleGeometry(0.013, 20), cream);
+  const l = new Mesh(new CircleGeometry(0.013, 24), cream);
   l.rotation.x = -Math.PI / 2;
   l.position.set(-0.01, 0.0005, -0.012);
   const r = l.clone();
   r.position.x = 0.01;
-  const tip = new Mesh(new ConeGeometry(0.02, 0.03, 3), cream);
-  tip.rotation.x = -Math.PI / 2;
-  tip.scale.y = 0.02;
-  tip.position.z = 0.025;
   art.add(big, l, r);
   art.visible = false;
 
-  const saucer = new Mesh(new CylinderGeometry(0.068, 0.05, 0.008, 36), ceramic);
-  saucer.position.y = 0.004;
-  root.add(wall, base, handle, liquid, art, grabVolume, saucer);
+  root.add(body, saucer, well, saucerRim, liquid, art, grabVolume);
   return { root, liquid, liquidMaterial, art };
 }
 

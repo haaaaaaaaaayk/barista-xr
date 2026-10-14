@@ -9,6 +9,9 @@
 import {
   Box3,
   createSystem,
+  DoubleSide,
+  MeshBasicMaterial,
+  PlaneGeometry,
   Raycaster,
   Entity,
   Grabbed,
@@ -34,7 +37,10 @@ import {
   buildPitcher,
   buildSteamPuffs,
   buildStream,
-  CUP_HEIGHT,
+  CUP_LIQUID_BASE,
+  CUP_LIQUID_DEPTH,
+  CUP_RIM,
+  cupInnerRadiusAt,
   CupParts,
   ESPRESSO_COLOR,
   LATTE_COLOR,
@@ -79,13 +85,13 @@ const STEP_COPY: Record<Step, { title: string; body: string; hint: string }> = {
   },
   [Step.Serve]: {
     title: 'Serve it',
-    body: 'Set the finished latte on the glowing green coaster.',
+    body: 'Lift your latte and set it down on the glowing green coaster.',
     hint: 'Careful, it is full!',
   },
   [Step.Done]: {
-    title: 'Latte served!',
-    body: 'Beautiful pour. Want to make this at home? Your kit is on the right.',
-    hint: 'Press Start over to beat your time.',
+    title: 'You made your first latte!',
+    body: 'Hooray, and thank you for brewing with us! Want to make it at home? Your kit is on the right.',
+    hint: 'Press Start over to brew another and beat your time.',
   },
 };
 
@@ -140,9 +146,14 @@ export class BaristaSystem extends createSystem({
   private lastProgressText = '';
 
   // prop dimensions (procedural defaults, replaced when premium models load)
-  private cupRim = CUP_HEIGHT;
-  private liquidBase = 0.003;
-  private liquidDepth = CUP_HEIGHT - 0.004;
+  private cupRim = CUP_RIM;
+  private liquidBase = CUP_LIQUID_BASE;
+  private liquidDepth = CUP_LIQUID_DEPTH;
+  private servePlaced = false;
+  private confetti!: Group;
+  private confettiVel!: Float32Array;
+  private confettiSpin!: Float32Array;
+  private confettiAge = -1;
   private milkRest = 0.07;
   private milkFull = 0.085;
   private counterModel: Group | null = null;
@@ -242,6 +253,7 @@ export class BaristaSystem extends createSystem({
     this.milkStream = buildStream(0xfdf6e8, 0.006);
     this.world.createTransformEntity(this.milkStream);
 
+    this.buildConfetti();
     this.puffs = buildSteamPuffs(8);
     for (const puff of this.puffs) {
       this.world.createTransformEntity(puff);
@@ -509,7 +521,8 @@ export class BaristaSystem extends createSystem({
         break;
 
       case Step.Serve:
-        if (!cupHeld && this.cupOnCoaster()) {
+        // Only a deliberate set-down counts, so step 5 is always a real step.
+        if (this.servePlaced && !cupHeld && this.cupOnCoaster()) {
           this.finish(time);
         }
         break;
@@ -520,6 +533,7 @@ export class BaristaSystem extends createSystem({
 
     this.updateCupLiquid();
     this.updateMarkers(time);
+    this.updateConfetti(dt);
   }
 
   // ------------------------------------------------------------------ steps
@@ -527,7 +541,8 @@ export class BaristaSystem extends createSystem({
     const changed = step !== this.step;
     this.step = step;
     const copy = STEP_COPY[step];
-    this.setText(this.stepEls.label, step === Step.Done ? 'COMPLETE' : `STEP ${step} OF 5`);
+    this.servePlaced = false;
+    this.setText(this.stepEls.label, step === Step.Done ? 'TA-DA!  STEP 5 OF 5 COMPLETE' : `STEP ${step} OF 5`);
     this.setText(this.stepEls.title, copy.title);
     this.setText(this.stepEls.body, copy.body);
     this.setText(this.stepEls.hint, copy.hint);
@@ -558,6 +573,7 @@ export class BaristaSystem extends createSystem({
       }
     }
     this.setStep(Step.Done);
+    this.celebrate();
     if (this.shopPanel) this.shopPanel.visible = true;
     if (this.kit == null) this.prefetchKit();
   }
@@ -678,6 +694,7 @@ export class BaristaSystem extends createSystem({
       if (this.horizontalDistance(this.v1, this.v3) < 0.11) {
         obj.position.set(this.v3.x, this.v3.y + 0.006, this.v3.z);
         obj.quaternion.identity();
+        if (this.step === Step.Serve) this.servePlaced = true;
         return;
       }
     }
@@ -717,6 +734,10 @@ export class BaristaSystem extends createSystem({
     const liquid = this.cup.liquid;
     liquid.visible = this.fill > 0.001 && !(this.step === Step.Done && this.servedCup != null);
     liquid.scale.y = Math.max(0.0001, this.fill * this.liquidDepth);
+    // The bowl flares, so the surface widens as it fills.
+    const r = cupInnerRadiusAt(liquid.position.y + liquid.scale.y) - 0.0006;
+    liquid.scale.x = liquid.scale.z = r;
+    this.cup.art.scale.setScalar(r / 0.042);
     this.cup.liquidMaterial.color.copy(ESPRESSO_COLOR).lerp(LATTE_COLOR, this.milkRatio);
     this.cup.art.position.y = liquid.position.y + liquid.scale.y + 0.001;
   }
@@ -761,6 +782,72 @@ export class BaristaSystem extends createSystem({
       );
       puff.scale.setScalar(0.6 + phase * 1.6);
     }
+  }
+
+  // ------------------------------------------------------------------ celebration
+  private buildConfetti(): void {
+    const colors = [0xf59e0b, 0xef4444, 0x22c55e, 0x3b82f6, 0xec4899, 0xfde68a];
+    const materials = colors.map((c) => new MeshBasicMaterial({ color: c, side: DoubleSide }));
+    const geometry = new PlaneGeometry(0.014, 0.007);
+    this.confetti = new Group();
+    const n = 90;
+    for (let i = 0; i < n; i++) {
+      const piece = new Mesh(geometry, materials[i % materials.length]);
+      piece.visible = false;
+      this.confetti.add(piece);
+    }
+    this.confettiVel = new Float32Array(n * 3);
+    this.confettiSpin = new Float32Array(n * 3);
+    this.world.createTransformEntity(this.confetti);
+  }
+
+  /** Ta-da: confetti over the served cup plus a double chime. */
+  private celebrate(): void {
+    this.cup.root.getWorldPosition(this.v1);
+    const pieces = this.confetti.children;
+    for (let i = 0; i < pieces.length; i++) {
+      const p = pieces[i];
+      p.visible = true;
+      p.position.set(this.v1.x, this.v1.y + 0.12, this.v1.z);
+      const a = Math.random() * Math.PI * 2;
+      const spread = 0.25 + Math.random() * 0.55;
+      this.confettiVel[i * 3] = Math.cos(a) * spread;
+      this.confettiVel[i * 3 + 1] = 1.3 + Math.random() * 1.2;
+      this.confettiVel[i * 3 + 2] = Math.sin(a) * spread;
+      this.confettiSpin[i * 3] = (Math.random() - 0.5) * 14;
+      this.confettiSpin[i * 3 + 1] = (Math.random() - 0.5) * 14;
+      this.confettiSpin[i * 3 + 2] = (Math.random() - 0.5) * 14;
+    }
+    this.confettiAge = 0;
+    this.playChime();
+    setTimeout(() => this.playChime(), 280);
+  }
+
+  private updateConfetti(dt: number): void {
+    if (this.confettiAge < 0) return;
+    this.confettiAge += dt;
+    const pieces = this.confetti.children;
+    const done = this.confettiAge > 3.2;
+    for (let i = 0; i < pieces.length; i++) {
+      const p = pieces[i];
+      if (done) {
+        p.visible = false;
+        continue;
+      }
+      const vy = i * 3 + 1;
+      this.confettiVel[vy] -= 2.6 * dt;
+      // Flutter: drag on the fall so pieces drift like paper.
+      if (this.confettiVel[vy] < -0.35) this.confettiVel[vy] = -0.35;
+      p.position.x += this.confettiVel[i * 3] * dt;
+      p.position.y += this.confettiVel[vy] * dt;
+      p.position.z += this.confettiVel[i * 3 + 2] * dt;
+      this.confettiVel[i * 3] *= 0.985;
+      this.confettiVel[i * 3 + 2] *= 0.985;
+      p.rotation.x += this.confettiSpin[i * 3] * dt;
+      p.rotation.y += this.confettiSpin[i * 3 + 1] * dt;
+      p.rotation.z += this.confettiSpin[i * 3 + 2] * dt;
+    }
+    if (done) this.confettiAge = -1;
   }
 
   // ------------------------------------------------------------------ text + audio
