@@ -248,3 +248,21 @@ export function buildSteamPuffs(count: number): Mesh[] {
   }
   return puffs;
 }
+
+// ---------------------------------------------------------------- guide marker
+export function buildMarker(): Mesh {
+  const ring = new Mesh(
+    new TorusGeometry(0.05, 0.004, 8, 40),
+    new MeshStandardMaterial({
+      color: 0xf59e0b,
+      emissive: new Color(0xf59e0b),
+      emissiveIntensity: 1.2,
+      transparent: true,
+      opacity: 0.85,
+      depthWrite: false,
+    }),
+  );
+  ring.rotation.x = -Math.PI / 2;
+  ring.visible = false;
+  return ring;
+}

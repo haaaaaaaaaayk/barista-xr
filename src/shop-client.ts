@@ -19,10 +19,10 @@ export interface KitResult {
 }
 
 export const KIT_QUERIES: { role: string; query: string }[] = [
-  { role: 'Espresso beans', query: 'espresso coffee beans' },
-  { role: 'Milk pitcher', query: 'milk frothing pitcher stainless steel' },
-  { role: 'Latte cup', query: 'ceramic latte cup' },
-  { role: 'Milk frother', query: 'handheld milk frother' },
+  { role: 'Espresso machine', query: 'espresso machine with milk steam wand' },
+  { role: 'Milk pitcher', query: 'stainless steel milk frothing pitcher' },
+  { role: 'Latte cup', query: 'ceramic latte cup and saucer' },
+  { role: 'Espresso beans', query: 'whole bean espresso coffee' },
 ];
 
 export async function fetchKit(): Promise<KitResult> {
@@ -96,4 +96,12 @@ export function initShopOverlay(): void {
     const overlay = document.getElementById('shop-overlay');
     if (overlay) overlay.hidden = true;
   });
+}
+
+/** Attribution required by the CC BY models (shown on the 2D page and overlay). */
+export function showCredits(credits: string[]): void {
+  const el = document.getElementById('credits');
+  if (el == null || credits.length === 0) return;
+  el.textContent = `3D models: ${credits.join(' · ')}`;
+  el.hidden = false;
 }

@@ -7,6 +7,7 @@
  *   5. set the cup on the green coaster → served, kit panel opens
  */
 import {
+  Box3,
   createSystem,
   Entity,
   Grabbed,
@@ -27,6 +28,7 @@ import {
   buildCoaster,
   buildCounter,
   buildCup,
+  buildMarker,
   buildMachine,
   buildPitcher,
   buildSteamPuffs,
@@ -38,7 +40,11 @@ import {
   MachineParts,
   PitcherParts,
 } from './barista-props.js';
-import { fetchKit, KitResult, rememberKit, showShopOverlay } from './shop-client.js';
+import { describe, findDrinkMeshes, fitModel, hideProcedural, loadManifest, loadModel } from './premium-models.js';
+import { fetchKit, KitResult, rememberKit, showCredits, showShopOverlay } from './shop-client.js';
+
+/** Per-model yaw corrections (radians) if a model faces away from the user. */
+const MODEL_YAW = { machine: 0 };
 
 enum Step {
   PlaceCup = 1,
@@ -107,6 +113,8 @@ export class BaristaSystem extends createSystem({
   private cupEntity!: Entity;
   private pitcherEntity!: Entity;
   private movable: { obj: Object3D; home: Vector3 }[] = [];
+  private trayMarker!: Mesh;
+  private wandMarker!: Mesh;
 
   // panels
   private stepEls: Partial<Record<'label' | 'title' | 'body' | 'progress' | 'hint', UIKit.Text>> = {};
@@ -129,6 +137,17 @@ export class BaristaSystem extends createSystem({
   private kitLoading = false;
   private chime?: HTMLAudioElement;
   private lastProgressText = '';
+
+  // prop dimensions (procedural defaults, replaced when premium models load)
+  private cupRim = CUP_HEIGHT;
+  private liquidBase = 0.003;
+  private liquidDepth = CUP_HEIGHT - 0.004;
+  private milkRest = 0.07;
+  private milkFull = 0.085;
+  private counterModel: Group | null = null;
+  private counterModelHeight = 1;
+  private drinkMeshes: Mesh[] = [];
+  private credits: string[] = [];
 
   // scratch (no allocation in update)
   private v1!: Vector3;
@@ -175,6 +194,7 @@ export class BaristaSystem extends createSystem({
 
     this.setStep(Step.PlaceCup);
     this.prefetchKit();
+    void this.upgradeWithModels().catch((err) => console.warn('[barista] model upgrade failed', err));
   }
 
   // ------------------------------------------------------------------ build
@@ -186,7 +206,7 @@ export class BaristaSystem extends createSystem({
     this.world.createTransformEntity(this.counter);
 
     this.machine = buildMachine();
-    this.machine.root.position.set(-0.28, top, COUNTER_Z - 0.08);
+    this.machine.root.position.set(-0.25, top, COUNTER_Z - 0.04);
     this.world.createTransformEntity(this.machine.root);
 
     // The brew button gets its own entity so it can be ray-pressed.
@@ -200,17 +220,17 @@ export class BaristaSystem extends createSystem({
     buttonEntity.addComponent(BaristaProp, { kind: 'brew-button' });
 
     this.coaster = buildCoaster();
-    this.coaster.position.set(0.36, top, COUNTER_Z + 0.08);
+    this.coaster.position.set(0.46, top, COUNTER_Z + 0.1);
     this.world.createTransformEntity(this.coaster);
 
     this.cup = buildCup();
-    this.cup.root.position.set(0.06, top, COUNTER_Z + 0.1);
+    this.cup.root.position.set(0.17, top, COUNTER_Z + 0.13);
     this.cupEntity = this.world.createTransformEntity(this.cup.root);
     this.cupEntity.addComponent(OneHandGrabbable, { rotate: true, translate: true });
     this.cupEntity.addComponent(BaristaProp, { kind: 'cup' });
 
     this.pitcher = buildPitcher();
-    this.pitcher.root.position.set(0.2, top, COUNTER_Z - 0.06);
+    this.pitcher.root.position.set(0.31, top, COUNTER_Z - 0.07);
     this.pitcherEntity = this.world.createTransformEntity(this.pitcher.root);
     this.pitcherEntity.addComponent(OneHandGrabbable, { rotate: true, translate: true });
     this.pitcherEntity.addComponent(BaristaProp, { kind: 'pitcher' });
@@ -233,6 +253,156 @@ export class BaristaSystem extends createSystem({
       this.cup.root,
       this.pitcher.root,
     ].map((obj) => ({ obj, home: obj.position.clone() }));
+
+    // Guide rings: show where the cup goes and where to hold the pitcher.
+    this.trayMarker = buildMarker();
+    this.world.createTransformEntity(this.trayMarker);
+    this.wandMarker = buildMarker();
+    this.wandMarker.scale.setScalar(0.8);
+    this.world.createTransformEntity(this.wandMarker);
+  }
+
+  // ------------------------------------------------------------------ premium models
+  /** Swaps procedural props for the open-licensed models fetched at build time. */
+  private async upgradeWithModels(): Promise<void> {
+    const manifest = await loadManifest();
+    this.credits = manifest.credits;
+    showCredits(manifest.credits);
+    const [machine, cup, pitcher, counter, plant, croissant] = await Promise.all([
+      loadModel(manifest, 'machine'),
+      loadModel(manifest, 'cup'),
+      loadModel(manifest, 'pitcher'),
+      loadModel(manifest, 'counter'),
+      loadModel(manifest, 'plant'),
+      loadModel(manifest, 'croissant'),
+    ]);
+    const lift = this.counterTop - BASE_COUNTER_TOP;
+
+    if (counter) {
+      console.info('[barista] counter', describe(counter));
+      const fit = fitModel(counter, { axis: 'x', size: 1.2 });
+      hideProcedural(this.counter, []);
+      const holder = new Group();
+      holder.add(fit.root);
+      holder.position.set(0, 0, COUNTER_Z);
+      this.counterModelHeight = fit.size.y;
+      holder.scale.y = this.counterTop / fit.size.y;
+      this.counterModel = holder;
+      this.world.createTransformEntity(holder);
+    }
+
+    if (machine) {
+      console.info('[barista] machine', describe(machine));
+      const fit = fitModel(machine, { axis: 'x', size: 0.6, yaw: MODEL_YAW.machine });
+      const { x: w, y: h, z: d } = fit.size;
+      hideProcedural(this.machine.root, []);
+      this.machine.root.add(fit.root);
+      const front = d / 2;
+      // Anchors for a two-group commercial machine (drip tray grate ~30% up).
+      this.machine.trayLocal = [-0.22 * w, 0.3 * h, front - 0.12 * d];
+      this.machine.groupHeadLocal = [-0.22 * w, 0.55 * h, front - 0.17 * d];
+      this.machine.wandTipLocal = [0.5 * w + 0.03, 0.32 * h, front - 0.08 * d];
+      this.machine.root.updateMatrixWorld(true);
+      this.machinePoint([-0.22 * w, 0.8 * h, front + 0.015], this.v1);
+      this.machine.brewButton.position.copy(this.v1);
+      this.setHome(this.machine.brewButton, lift);
+    }
+
+    if (cup) {
+      console.info('[barista] cup', describe(cup));
+      const fit = fitModel(cup, { axis: 'max', size: 0.15 });
+      hideProcedural(this.cup.root, [this.cup.liquid, this.cup.art]);
+      this.cup.root.add(fit.root);
+      this.drinkMeshes = findDrinkMeshes(cup);
+      for (const m of this.drinkMeshes) m.visible = false;
+      // Cup body: a mesh named like a cup, else estimate from the saucer footprint.
+      fit.root.updateMatrixWorld(true);
+      let body: Mesh | null = null;
+      cup.traverse((o) => {
+        const mesh = o as Mesh;
+        if (!body && mesh.isMesh && /cup|mug/i.test(mesh.name) && !/saucer|plate|spoon/i.test(mesh.name)) body = mesh;
+      });
+      const box = new Box3();
+      if (body) {
+        box.setFromObject(body);
+        // Into cup-root space (the root is upright and unscaled at load time).
+        this.cup.root.updateMatrixWorld(true);
+        this.cup.root.worldToLocal(box.min);
+        this.cup.root.worldToLocal(box.max);
+      } else {
+        const bw = fit.size.x * 0.55;
+        box.min.set(-bw / 2, fit.size.y * 0.12, -bw / 2);
+        box.max.set(bw / 2, fit.size.y, bw / 2);
+      }
+      const bodyW = Math.min(box.max.x - box.min.x, box.max.z - box.min.z);
+      const radius = bodyW * 0.42;
+      const bottom = box.min.y + (box.max.y - box.min.y) * 0.14;
+      this.cupRim = box.max.y;
+      this.liquidBase = bottom;
+      this.liquidDepth = Math.max(0.02, box.max.y - 0.006 - bottom);
+      const cx = (box.min.x + box.max.x) / 2;
+      const cz = (box.min.z + box.max.z) / 2;
+      this.cup.liquid.position.set(cx, bottom, cz);
+      this.cup.liquid.scale.x = this.cup.liquid.scale.z = radius / 0.0425;
+      this.cup.art.position.x = cx;
+      this.cup.art.position.z = cz;
+      this.cup.art.scale.setScalar(Math.min(1.2, radius / 0.04));
+    }
+
+    if (pitcher) {
+      console.info('[barista] pitcher', describe(pitcher));
+      const fit = fitModel(pitcher, { axis: 'y', size: 0.12 });
+      hideProcedural(this.pitcher.root, [this.pitcher.milk, this.pitcher.spout]);
+      this.pitcher.root.add(fit.root);
+      const inner = Math.min(fit.size.x, fit.size.z) * 0.36;
+      this.pitcher.milk.scale.x = this.pitcher.milk.scale.z = inner / 0.044;
+      this.milkRest = fit.size.y * 0.55;
+      this.milkFull = fit.size.y * 0.7;
+      if (this.step <= Step.Steam) this.pitcher.milk.scale.y = this.milkRest;
+      this.pitcher.spout.position.set(0, fit.size.y, 0);
+    }
+
+    if (plant) {
+      const fit = fitModel(plant, { axis: 'y', size: 0.32 });
+      fit.root.position.set(0.5, this.counterTop, COUNTER_Z - 0.15);
+      this.world.createTransformEntity(fit.root);
+      this.movable.push({ obj: fit.root, home: fit.root.position.clone().setY(BASE_COUNTER_TOP) });
+    }
+    if (croissant) {
+      const fit = fitModel(croissant, { axis: 'max', size: 0.12 });
+      fit.root.position.set(0.13, this.counterTop, COUNTER_Z - 0.15);
+      fit.root.rotation.y = 0.6;
+      this.world.createTransformEntity(fit.root);
+      this.movable.push({ obj: fit.root, home: fit.root.position.clone().setY(BASE_COUNTER_TOP) });
+    }
+  }
+
+  /** Records an object's current position as its home (relative to the base counter height). */
+  private setHome(obj: Object3D, lift: number): void {
+    const entry = this.movable.find((m) => m.obj === obj);
+    if (entry) {
+      entry.home.copy(obj.position);
+      entry.home.y -= lift;
+    }
+  }
+
+  private updateMarkers(time: number): void {
+    const showTray = this.step === Step.PlaceCup || (this.step === Step.Brew && !this.cupInTray());
+    this.trayMarker.visible = showTray;
+    if (showTray) {
+      this.machinePoint(this.machine.trayLocal, this.v1);
+      this.trayMarker.position.copy(this.v1);
+      this.trayMarker.position.y += 0.004;
+    }
+    const showWand = this.step === Step.Steam && !this.pitcherAtWand();
+    this.wandMarker.visible = showWand;
+    if (showWand) {
+      this.machinePoint(this.machine.wandTipLocal, this.v1);
+      this.wandMarker.position.copy(this.v1);
+    }
+    const pulse = 1 + Math.sin(time * 4) * 0.08;
+    this.trayMarker.scale.setScalar(pulse);
+    this.wandMarker.scale.setScalar(0.8 * pulse);
   }
 
   private bindPanels(): void {
@@ -315,7 +485,7 @@ export class BaristaSystem extends createSystem({
         if (this.pitcherAtWand()) {
           this.steam = Math.min(1, this.steam + dt / STEAM_SECONDS);
           this.animateSteam(time, true);
-          this.pitcher.milk.scale.y = 0.07 + 0.015 * this.steam; // milk foams up
+          this.pitcher.milk.scale.y = this.milkRest + (this.milkFull - this.milkRest) * 0.6 * this.steam; // milk foams up
           this.setProgress(`Steaming... ${Math.round(this.steam * 100)}%`);
           if (this.steam >= 1) {
             this.animateSteam(time, false);
@@ -332,7 +502,7 @@ export class BaristaSystem extends createSystem({
           this.fill = Math.min(LATTE_TARGET, this.fill + POUR_RATE * dt);
           this.milkRatio = (this.fill - ESPRESSO_TARGET) / (LATTE_TARGET - ESPRESSO_TARGET);
           this.pitcherMilk = 1 - this.milkRatio;
-          this.pitcher.milk.scale.y = Math.max(0.004, 0.085 * this.pitcherMilk);
+          this.pitcher.milk.scale.y = Math.max(0.004, this.milkFull * this.pitcherMilk);
           this.showMilkStream(true);
           this.setProgress(`Pouring... ${Math.round(this.milkRatio * 100)}%`);
           if (this.fill >= LATTE_TARGET) {
@@ -356,6 +526,7 @@ export class BaristaSystem extends createSystem({
     }
 
     this.updateCupLiquid();
+    this.updateMarkers(time);
   }
 
   // ------------------------------------------------------------------ steps
@@ -382,6 +553,12 @@ export class BaristaSystem extends createSystem({
       /* storage unavailable */
     }
     this.elapsedText = best === seconds ? `Served in ${seconds}s. New best!` : `Served in ${seconds}s. Best: ${best}s`;
+    if (this.drinkMeshes.length > 0) {
+      // Reveal the model's own finished latte (foam + art) in place of ours.
+      for (const m of this.drinkMeshes) m.visible = true;
+      this.cup.liquid.visible = false;
+      this.cup.art.visible = false;
+    }
     this.setStep(Step.Done);
     if (this.shopPanel) this.shopPanel.visible = true;
     if (this.kit == null) this.prefetchKit();
@@ -402,7 +579,9 @@ export class BaristaSystem extends createSystem({
     this.steam = 0;
     this.pitcherMilk = 1;
     this.brewing = false;
-    this.pitcher.milk.scale.y = 0.07;
+    this.pitcher.milk.scale.y = this.milkRest;
+    for (const m of this.drinkMeshes) m.visible = false;
+    this.cup.liquid.visible = true;
     this.cup.art.visible = false;
     this.showEspressoStream(false);
     this.showMilkStream(false);
@@ -474,8 +653,8 @@ export class BaristaSystem extends createSystem({
     if (this.up.y > 0.6) return false; // not tilted enough (~53°)
     this.pitcher.spout.getWorldPosition(this.v1);
     this.cup.root.getWorldPosition(this.v2);
-    const rimY = this.v2.y + CUP_HEIGHT;
-    return this.horizontalDistance(this.v1, this.v2) < 0.09 && this.v1.y > rimY - 0.03 && this.v1.y < rimY + 0.3;
+    const rimY = this.v2.y + this.cupRim;
+    return this.horizontalDistance(this.v1, this.v2) < 0.11 && this.v1.y > rimY - 0.03 && this.v1.y < rimY + 0.3;
   }
 
   // ------------------------------------------------------------------ release / snapping
@@ -528,6 +707,7 @@ export class BaristaSystem extends createSystem({
     const delta = target - this.counterTop;
     for (const { obj } of this.movable) obj.position.y += delta;
     for (const panel of this.panels) panel.position.y += delta;
+    if (this.counterModel) this.counterModel.scale.y = target / this.counterModelHeight;
     this.counterTop = target;
     this.calibrated = true;
   }
@@ -535,10 +715,10 @@ export class BaristaSystem extends createSystem({
   // ------------------------------------------------------------------ visuals
   private updateCupLiquid(): void {
     const liquid = this.cup.liquid;
-    liquid.visible = this.fill > 0.001;
-    liquid.scale.y = Math.max(0.0001, this.fill * (CUP_HEIGHT - 0.004));
+    liquid.visible = this.fill > 0.001 && !(this.step === Step.Done && this.drinkMeshes.length > 0);
+    liquid.scale.y = Math.max(0.0001, this.fill * this.liquidDepth);
     this.cup.liquidMaterial.color.copy(ESPRESSO_COLOR).lerp(LATTE_COLOR, this.milkRatio);
-    this.cup.art.position.y = 0.004 + liquid.scale.y + 0.001;
+    this.cup.art.position.y = liquid.position.y + liquid.scale.y + 0.001;
   }
 
   private showEspressoStream(on: boolean): void {
@@ -547,7 +727,7 @@ export class BaristaSystem extends createSystem({
     if (!on) return;
     this.machinePoint(this.machine.groupHeadLocal, this.v1);
     this.cup.root.getWorldPosition(this.v2);
-    const surface = this.v2.y + 0.004 + this.fill * CUP_HEIGHT;
+    const surface = this.v2.y + this.liquidBase + this.fill * this.liquidDepth;
     s.position.copy(this.v1);
     s.scale.y = Math.max(0.01, this.v1.y - surface);
   }
@@ -558,7 +738,7 @@ export class BaristaSystem extends createSystem({
     if (!on) return;
     this.pitcher.spout.getWorldPosition(this.v1);
     this.cup.root.getWorldPosition(this.v2);
-    const surface = this.v2.y + 0.004 + this.fill * CUP_HEIGHT;
+    const surface = this.v2.y + this.liquidBase + this.fill * this.liquidDepth;
     s.position.copy(this.v1);
     s.scale.y = Math.max(0.01, this.v1.y - surface);
   }

@@ -55,3 +55,6 @@ pids/
 
 # Agent scratch output
 artifacts/
+
+# Generated at build time by scripts/fetch-models.mjs
+public/models/
