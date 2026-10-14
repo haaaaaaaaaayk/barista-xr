@@ -586,7 +586,7 @@ export class BaristaSystem extends createSystem({
     this.setText(this.stepEls.title, copy.title);
     this.setText(this.stepEls.body, copy.body);
     this.setText(this.stepEls.hint, copy.hint);
-    this.setProgress(step === Step.Done ? this.elapsedText : ' ');
+    this.setProgress(step === Step.Done ? this.elapsedText : 'You got this!');
     if (changed && step !== Step.PlaceCup) this.playChime();
   }
 

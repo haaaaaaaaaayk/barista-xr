@@ -41,7 +41,7 @@
     <div id="step-label" class="eyebrow">STEP 1 OF 5</div>
     <div id="step-title" class="title">Place the cup</div>
     <div id="step-body" class="body">Grab the white cup and set it on the drip tray under the espresso machine.</div>
-    <div id="step-progress" class="progress"> </div>
+    <div id="step-progress" class="progress">Let's brew!</div>
     <div id="step-hint" class="muted">Hands: pinch to grab. Controllers: hold the grip button.</div>
   </div>
   <Button id="restart-button" class="button">

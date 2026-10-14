@@ -42,20 +42,20 @@
     <div class="title">Your latte kit</div>
     <div id="shop-status" class="muted">Finding live products from Shop...</div>
     <div class="row">
-      <div id="p0-title" class="row-title"> </div>
-      <div id="p0-meta" class="row-meta"> </div>
+      <div id="p0-title" class="row-title">Loading product...</div>
+      <div id="p0-meta" class="row-meta">Fetching price...</div>
     </div>
     <div class="row">
-      <div id="p1-title" class="row-title"> </div>
-      <div id="p1-meta" class="row-meta"> </div>
+      <div id="p1-title" class="row-title">Loading product...</div>
+      <div id="p1-meta" class="row-meta">Fetching price...</div>
     </div>
     <div class="row">
-      <div id="p2-title" class="row-title"> </div>
-      <div id="p2-meta" class="row-meta"> </div>
+      <div id="p2-title" class="row-title">Loading product...</div>
+      <div id="p2-meta" class="row-meta">Fetching price...</div>
     </div>
     <div class="row">
-      <div id="p3-title" class="row-title"> </div>
-      <div id="p3-meta" class="row-meta"> </div>
+      <div id="p3-title" class="row-title">Loading product...</div>
+      <div id="p3-meta" class="row-meta">Fetching price...</div>
     </div>
   </div>
   <Button id="shop-button" class="button">
