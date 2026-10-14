@@ -295,7 +295,7 @@ export class BaristaSystem extends createSystem({
 
     if (machine) {
       console.info('[barista] machine', describe(machine));
-      const fit = fitModel(machine, { axis: 'x', size: 0.6, yaw: MODEL_YAW.machine });
+      const fit = fitModel(machine, { axis: 'x', size: 0.68, yaw: MODEL_YAW.machine });
       const { x: w, y: h, z: d } = fit.size;
       hideProcedural(this.machine.root, []);
       this.machine.root.add(fit.root);
@@ -363,7 +363,7 @@ export class BaristaSystem extends createSystem({
     }
     if (croissant) {
       const fit = fitModel(croissant, { axis: 'max', size: 0.12 });
-      fit.root.position.set(0.13, this.counterTop, COUNTER_Z - 0.15);
+      fit.root.position.set(0.19, this.counterTop, COUNTER_Z - 0.17);
       fit.root.rotation.y = 0.6;
       this.world.createTransformEntity(fit.root);
       this.movable.push({ obj: fit.root, home: fit.root.position.clone().setY(BASE_COUNTER_TOP) });

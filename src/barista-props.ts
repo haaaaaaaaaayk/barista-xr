@@ -111,7 +111,7 @@ export function buildMachine(): MachineParts {
 }
 
 // ---------------------------------------------------------------- cup
-export const CUP_HEIGHT = 0.085;
+export const CUP_HEIGHT = 0.072;
 
 export interface CupParts {
   root: Group;
