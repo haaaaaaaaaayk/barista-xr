@@ -174,7 +174,7 @@ export function buildCup(): CupParts {
   art.visible = false;
 
   const saucer = new Mesh(new CylinderGeometry(0.068, 0.05, 0.008, 36), ceramic);
-  saucer.position.y = -0.004;
+  saucer.position.y = 0.004;
   root.add(wall, base, handle, liquid, art, grabVolume, saucer);
   return { root, liquid, liquidMaterial, art };
 }

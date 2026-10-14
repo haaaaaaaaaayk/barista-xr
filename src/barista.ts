@@ -9,6 +9,7 @@
 import {
   Box3,
   createSystem,
+  Raycaster,
   Entity,
   Grabbed,
   Group,
@@ -300,11 +301,28 @@ export class BaristaSystem extends createSystem({
       this.machine.root.add(fit.root);
       const front = d / 2;
       // Anchors for a two-group commercial machine (drip tray grate ~30% up).
-      this.machine.trayLocal = [-0.27 * w, 0.33 * h, front - 0.25 * d];
-      this.machine.groupHeadLocal = [-0.27 * w, 0.55 * h, front - 0.3 * d];
-      this.machine.wandTipLocal = [0.47 * w, 0.4 * h, front - 0.1 * d];
+      const gx = -0.24 * w;
+      const gz = front - 0.25 * d;
       this.machine.root.updateMatrixWorld(true);
-      this.machinePoint([-0.27 * w, 0.8 * h, front + 0.01], this.v1);
+      // Measure the real drip-tray surface and spout height by casting rays into the model.
+      const rc = new Raycaster();
+      const down = new Vector3(0, -1, 0);
+      const up = new Vector3(0, 1, 0);
+      let trayY = 0.33 * h;
+      let headY = 0.55 * h;
+      this.machinePoint([gx, 0.5 * h, gz], this.v1);
+      rc.set(this.v1, down);
+      const trayHit = rc.intersectObject(fit.root, true)[0];
+      if (trayHit) trayY = this.machine.root.worldToLocal(this.v2.copy(trayHit.point)).y;
+      this.machinePoint([gx, trayY + 0.02, gz], this.v1);
+      rc.set(this.v1, up);
+      const headHit = rc.intersectObject(fit.root, true)[0];
+      if (headHit) headY = this.machine.root.worldToLocal(this.v2.copy(headHit.point)).y - 0.004;
+      console.info('[barista] tray', trayY.toFixed(3), 'spout', headY.toFixed(3), 'of', h.toFixed(3));
+      this.machine.trayLocal = [gx, trayY, gz];
+      this.machine.groupHeadLocal = [gx, headY, gz];
+      this.machine.wandTipLocal = [0.47 * w, 0.4 * h, front - 0.1 * d];
+      this.machinePoint([gx, 0.8 * h, front + 0.01], this.v1);
       this.machine.brewButton.position.copy(this.v1);
       this.setHome(this.machine.brewButton, lift);
     }
